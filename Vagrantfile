@@ -55,6 +55,13 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
       v.customize ["modifyvm", :id, "--nictype1", "virtio"]
       v.customize ["modifyvm", :id, "--nictype2", "virtio"]
     end
+
+    config.vm.provider :vmware_desktop do |v|
+      v.memsize["memsize"] = $vm_mem
+      v.memsize["numvcpus"] = $vm_cpus
+
+      config.vm.box_url = $kube_box[$kube_os]["box_url"].gsub('virtualbox','vmware_desktop')
+    end
   end
 
   # Kubernetes master
