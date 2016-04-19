@@ -488,6 +488,14 @@ func (elb *FakeELB) ConfigureHealthCheck(*elb.ConfigureHealthCheckInput) (*elb.C
 	panic("Not implemented")
 }
 
+func (elb *FakeELB) CreateLoadBalancerPolicy(*elb.CreateLoadBalancerPolicyInput) (*elb.CreateLoadBalancerPolicyOutput, error) {
+	panic("Not implemented")
+}
+
+func (elb *FakeELB) SetLoadBalancerPoliciesForBackendServer(*elb.SetLoadBalancerPoliciesForBackendServerInput) (*elb.SetLoadBalancerPoliciesForBackendServerOutput, error) {
+	panic("Not implemented")
+}
+
 type FakeASG struct {
 	aws *FakeAWSServices
 }
