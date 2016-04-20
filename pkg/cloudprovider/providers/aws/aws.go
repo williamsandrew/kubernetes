@@ -69,6 +69,9 @@ const TagNameSubnetPublicELB = "kubernetes.io/role/elb"
 // This lets us define more advanced semantics in future.
 const ServiceAnnotationLoadBalancerInternal = "service.beta.kubernetes.io/aws-load-balancer-internal"
 
+// TODO Add description here
+const ServiceAnnotationLoadBalancerProxyProtocol = "service.beta.kubernetes.io/aws-load-balancer-proxy-protocol"
+
 // Service annotation requesting a secure listener. Value is a valid certificate ARN.
 // For more, see http://docs.aws.amazon.com/ElasticLoadBalancing/latest/DeveloperGuide/elb-listener-config.html
 // CertARN is an IAM or CM certificate ARN, e.g. arn:aws:acm:us-east-1:123456789012:certificate/12345678-1234-1234-1234-123456789012
@@ -159,6 +162,8 @@ type ELB interface {
 	DescribeLoadBalancers(*elb.DescribeLoadBalancersInput) (*elb.DescribeLoadBalancersOutput, error)
 	RegisterInstancesWithLoadBalancer(*elb.RegisterInstancesWithLoadBalancerInput) (*elb.RegisterInstancesWithLoadBalancerOutput, error)
 	DeregisterInstancesFromLoadBalancer(*elb.DeregisterInstancesFromLoadBalancerInput) (*elb.DeregisterInstancesFromLoadBalancerOutput, error)
+	CreateLoadBalancerPolicy(*elb.CreateLoadBalancerPolicyInput) (*elb.CreateLoadBalancerPolicyOutput, error)
+	SetLoadBalancerPoliciesForBackendServer(*elb.SetLoadBalancerPoliciesForBackendServerInput) (*elb.SetLoadBalancerPoliciesForBackendServerOutput, error)
 
 	DetachLoadBalancerFromSubnets(*elb.DetachLoadBalancerFromSubnetsInput) (*elb.DetachLoadBalancerFromSubnetsOutput, error)
 	AttachLoadBalancerToSubnets(*elb.AttachLoadBalancerToSubnetsInput) (*elb.AttachLoadBalancerToSubnetsOutput, error)
@@ -2208,6 +2213,14 @@ func (s *AWSCloud) EnsureLoadBalancer(apiService *api.Service, hosts []string, a
 		internalELB = true
 	}
 
+	// Determine if we need to set the Proxy protocol policy
+	// XXX see http://docs.aws.amazon.com/cli/latest/reference/elb/create-load-balancer-policy.html
+	proxyProtocol := false
+	// TODO Review how we want this annonation to look. This is likely temporary
+	if annotations[ServiceAnnotationLoadBalancerProxyProtocol] != "" {
+		proxyProtocol = true
+	}
+
 	// Find the subnets that the ELB will live in
 	subnetIDs, err := s.findELBSubnets(internalELB)
 	if err != nil {
@@ -2260,7 +2273,15 @@ func (s *AWSCloud) EnsureLoadBalancer(apiService *api.Service, hosts []string, a
 	securityGroupIDs := []string{securityGroupID}
 
 	// Build the load balancer itself
-	loadBalancer, err := s.ensureLoadBalancer(serviceName, loadBalancerName, listeners, subnetIDs, securityGroupIDs, internalELB)
+	loadBalancer, err := s.ensureLoadBalancer(
+		serviceName,
+		loadBalancerName,
+		listeners,
+		subnetIDs,
+		securityGroupIDs,
+		internalELB,
+		proxyProtocol,
+	)
 	if err != nil {
 		return nil, err
 	}
