@@ -28,7 +28,7 @@ import (
 	"k8s.io/kubernetes/pkg/util/sets"
 )
 
-const ProxyProtocolPolicyName = "k8s-proxyprotocol"
+const ProxyProtocolPolicyName = "k8s-proxyprotocol-enabled"
 
 func (s *AWSCloud) ensureLoadBalancer(namespacedName types.NamespacedName, loadBalancerName string, listeners []*elb.Listener, subnetIDs []string, securityGroupIDs []string, internalELB, proxyProtocol bool) (*elb.LoadBalancerDescription, error) {
 	loadBalancer, err := s.describeLoadBalancer(loadBalancerName)
