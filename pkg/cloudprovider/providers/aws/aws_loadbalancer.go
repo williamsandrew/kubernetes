@@ -414,7 +414,7 @@ func (s *AWSCloud) createProxyProtocolPolicy(loadBalancerName string) error {
 
 func proxyProtocolEnabled(backend *elb.BackendServerDescription) bool {
 	for _, policy := range backend.PolicyNames {
-		if orEmpty(policy) == ProxyProtocolPolicyName {
+		if aws.StringValue(policy) == ProxyProtocolPolicyName {
 			return true
 		}
 	}
