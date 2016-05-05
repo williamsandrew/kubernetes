@@ -69,7 +69,9 @@ const TagNameSubnetPublicELB = "kubernetes.io/role/elb"
 // This lets us define more advanced semantics in future.
 const ServiceAnnotationLoadBalancerInternal = "service.beta.kubernetes.io/aws-load-balancer-internal"
 
-// TODO Add description here
+// Annotation used on the service to enable the proxy protocol on an ELB. Right now we only
+// accept the value "*" which means enable the proxy protocol on all ELB backends. In the
+// future we could adjust this to allow setting the proxy protocol only on certain backends.
 const ServiceAnnotationLoadBalancerProxyProtocol = "service.beta.kubernetes.io/aws-load-balancer-proxy-protocol"
 
 // Service annotation requesting a secure listener. Value is a valid certificate ARN.
@@ -2214,10 +2216,12 @@ func (s *AWSCloud) EnsureLoadBalancer(apiService *api.Service, hosts []string, a
 	}
 
 	// Determine if we need to set the Proxy protocol policy
-	// XXX see http://docs.aws.amazon.com/cli/latest/reference/elb/create-load-balancer-policy.html
 	proxyProtocol := false
-	// TODO Review how we want this annonation to look. This is likely temporary
-	if annotations[ServiceAnnotationLoadBalancerProxyProtocol] != "" {
+	proxyProtocolAnnotation := annotations[ServiceAnnotationLoadBalancerProxyProtocol]
+	if proxyProtocolAnnotation != "" {
+		if proxyProtocolAnnotation != "*" {
+			return nil, fmt.Errorf("annotation %q=%q detected, but the only value supported currently is '*'", ServiceAnnotationLoadBalancerProxyProtocol, proxyProtocolAnnotation)
+		}
 		proxyProtocol = true
 	}
 
