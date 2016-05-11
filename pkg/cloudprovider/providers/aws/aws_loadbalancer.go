@@ -390,9 +390,7 @@ func (s *AWSCloud) ensureLoadBalancerInstances(loadBalancerName string, lbInstan
 }
 
 func (s *AWSCloud) createProxyProtocolPolicy(loadBalancerName string) error {
-	glog.V(2).Info("XXX creating proxy protocol policy")
-
-	policyRequest := &elb.CreateLoadBalancerPolicyInput{
+	request := &elb.CreateLoadBalancerPolicyInput{
 		LoadBalancerName: aws.String(loadBalancerName),
 		PolicyName:       aws.String(ProxyProtocolPolicyName),
 		PolicyTypeName:   aws.String("ProxyProtocolPolicyType"),
@@ -404,7 +402,7 @@ func (s *AWSCloud) createProxyProtocolPolicy(loadBalancerName string) error {
 		},
 	}
 	glog.V(2).Info("Creating proxy protocol policy on load balancer")
-	_, err := s.elb.CreateLoadBalancerPolicy(policyRequest)
+	_, err := s.elb.CreateLoadBalancerPolicy(request)
 	if err != nil {
 		return fmt.Errorf("error creating proxy protocol policy on load balancer: %v", err)
 	}
