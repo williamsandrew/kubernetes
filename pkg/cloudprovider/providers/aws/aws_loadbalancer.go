@@ -65,27 +65,17 @@ func (s *AWSCloud) ensureLoadBalancer(namespacedName types.NamespacedName, loadB
 			return nil, err
 		}
 
-		// XXX Do we always want to create this policy or should we do this lazily
-		// and create when requested
-		err = s.createProxyProtocolPolicy(loadBalancerName)
-		if err != nil {
-			return nil, err
-		}
-
 		if proxyProtocol {
-			for _, proxyListener := range listeners {
-				// TODO Refactor this out into a seperate method
-				request := &elb.SetLoadBalancerPoliciesForBackendServerInput{
-					InstancePort:     proxyListener.InstancePort,
-					LoadBalancerName: aws.String(loadBalancerName),
-					PolicyNames: []*string{
-						aws.String(ProxyProtocolPolicyName),
-					},
-				}
-				glog.V(2).Info("Enabling proxy protocol policy on node port %d", *proxyListener.InstancePort)
-				_, err := s.elb.SetLoadBalancerPoliciesForBackendServer(request)
+			err = s.createProxyProtocolPolicy(loadBalancerName)
+			if err != nil {
+				return nil, err
+			}
+
+			for _, listener := range listeners {
+				glog.V(2).Infof("Adjusting AWS loadbalancer proxy protocol on node port %d. Setting to true", *listener.InstancePort)
+				err := s.setBackendPolicies(loadBalancerName, *listener.InstancePort, []*string{aws.String(ProxyProtocolPolicyName)})
 				if err != nil {
-					return nil, fmt.Errorf("error enabling AWS loadbalancer proxy protocol: %v", err)
+					return nil, err
 				}
 			}
 		}
@@ -145,8 +135,6 @@ func (s *AWSCloud) ensureLoadBalancer(namespacedName types.NamespacedName, loadB
 				dirty = true
 			}
 		}
-
-		// TODO(williamsandrew) Ensure proxy protocol policy is on the existing load balancer
 
 		{
 			// Sync listeners
@@ -216,56 +204,71 @@ func (s *AWSCloud) ensureLoadBalancer(namespacedName types.NamespacedName, loadB
 				if err != nil {
 					return nil, fmt.Errorf("error creating AWS loadbalancer listeners: %v", err)
 				}
-
-				if proxyProtocol {
-					for _, newListener := range additions {
-						// TODO(williamsandrew) DRY this up
-						request := &elb.SetLoadBalancerPoliciesForBackendServerInput{
-							InstancePort:     newListener.InstancePort,
-							LoadBalancerName: aws.String(loadBalancerName),
-							PolicyNames: []*string{
-								aws.String(ProxyProtocolPolicyName),
-							},
-						}
-						glog.V(2).Info("Enabling proxy protocol policy on node port %d", *newListener.InstancePort)
-						_, err := s.elb.SetLoadBalancerPoliciesForBackendServer(request)
-						if err != nil {
-							return nil, fmt.Errorf("error enabling AWS loadbalancer proxy protocol: %v", err)
-						}
-					}
-				}
 				dirty = true
 			}
+		}
 
-			// Sync Proxy Protocol for existing listeners
-			for _, backendListener := range loadBalancer.BackendServerDescriptions {
-				var policies []*string = nil
+		{
+			// Sync proxy protocol state for new and existing listeners
 
-				if proxyProtocolEnabled(backendListener) {
-					if !proxyProtocol {
-						policies = []*string{}
-						glog.V(2).Info("Disabling proxy protocol policy on node port %d", *backendListener.InstancePort)
-					}
-				} else {
-					if proxyProtocol {
-						policies = []*string{
-							aws.String(ProxyProtocolPolicyName),
-						}
-						glog.V(2).Info("Enabling proxy protocol policy on node port %d", *backendListener.InstancePort)
-					}
+			proxyPolicies := make([]*string, 0)
+			if proxyProtocol {
+				// Ensure the backend policy exists
+
+				// NOTE The documentation for the AWS API indicates we could get an HTTP 400
+				// back if a policy of the same name already exists. However, the aws-sdk does not
+				// seem to return an error to us in these cases. Therefore this will issue an API
+				// request everytime.
+				err := s.createProxyProtocolPolicy(loadBalancerName)
+				if err != nil {
+					return nil, err
 				}
 
-				if policies != nil {
-					// TODO(williamsandrew) DRY this up
-					request := &elb.SetLoadBalancerPoliciesForBackendServerInput{
-						InstancePort:     backendListener.InstancePort,
-						LoadBalancerName: aws.String(loadBalancerName),
-						PolicyNames:      policies,
-					}
-					_, err := s.elb.SetLoadBalancerPoliciesForBackendServer(request)
+				proxyPolicies = append(proxyPolicies, aws.String(ProxyProtocolPolicyName))
+			}
+
+			foundBackends := make(map[int64]bool)
+			proxyProtocolBackends := make(map[int64]bool)
+			for _, backendListener := range loadBalancer.BackendServerDescriptions {
+				foundBackends[*backendListener.InstancePort] = false
+				proxyProtocolBackends[*backendListener.InstancePort] = proxyProtocolEnabled(backendListener)
+			}
+
+			for _, listener := range listeners {
+				setPolicy := false
+				instancePort := *listener.InstancePort
+
+				if val, ok := proxyProtocolBackends[instancePort]; !ok {
+					// This is a new ELB backend so we only need to worry about
+					// adding a policy and not removing an existing one
+					setPolicy = proxyProtocol
+				} else {
+					foundBackends[instancePort] = true
+					// This is an existing ELB backend so we only need to
+					// determine if the state changed
+					setPolicy = (val != proxyProtocol)
+				}
+
+				if setPolicy {
+					glog.V(2).Infof("Adjusting AWS loadbalancer proxy protocol on node port %d. Setting to %t", instancePort, proxyProtocol)
+					err := s.setBackendPolicies(loadBalancerName, instancePort, proxyPolicies)
 					if err != nil {
-						return nil, fmt.Errorf("error enabling AWS loadbalancer proxy protocol: %v", err)
+						return nil, err
 					}
+					dirty = true
+				}
+			}
+
+			// We now need to figure out which backend policies need removed because Amazon
+			// will keep the policies around even if there is no corresponding listener
+			for instancePort, found := range foundBackends {
+				if !found {
+					glog.V(2).Infof("Adjusting AWS loadbalancer proxy protocol on node port %d. Setting to false", instancePort)
+					err := s.setBackendPolicies(loadBalancerName, instancePort, []*string{})
+					if err != nil {
+						return nil, err
+					}
+					dirty = true
 				}
 			}
 		}
