@@ -410,6 +410,25 @@ func (s *AWSCloud) createProxyProtocolPolicy(loadBalancerName string) error {
 	return nil
 }
 
+func (s *AWSCloud) setBackendPolicies(loadBalancerName string, instancePort int64, policies []*string) error {
+	request := &elb.SetLoadBalancerPoliciesForBackendServerInput{
+		InstancePort:     aws.Int64(instancePort),
+		LoadBalancerName: aws.String(loadBalancerName),
+		PolicyNames:      policies,
+	}
+	if len(policies) > 0 {
+		glog.V(2).Infof("Adding AWS loadbalancer backend policies on node port %d", instancePort)
+	} else {
+		glog.V(2).Infof("Removing AWS loadbalancer backend policies on node port %d", instancePort)
+	}
+	_, err := s.elb.SetLoadBalancerPoliciesForBackendServer(request)
+	if err != nil {
+		return fmt.Errorf("error adjusting AWS loadbalancer backend policies: %v", err)
+	}
+
+	return nil
+}
+
 func proxyProtocolEnabled(backend *elb.BackendServerDescription) bool {
 	for _, policy := range backend.PolicyNames {
 		if aws.StringValue(policy) == ProxyProtocolPolicyName {
