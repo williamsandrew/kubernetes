@@ -238,15 +238,16 @@ func (s *AWSCloud) ensureLoadBalancer(namespacedName types.NamespacedName, loadB
 				setPolicy := false
 				instancePort := *listener.InstancePort
 
-				if val, ok := proxyProtocolBackends[instancePort]; !ok {
+				if currentState, ok := proxyProtocolBackends[instancePort]; !ok {
 					// This is a new ELB backend so we only need to worry about
-					// adding a policy and not removing an existing one
+					// potentientally adding a policy and not removing an
+					// existing one
 					setPolicy = proxyProtocol
 				} else {
 					foundBackends[instancePort] = true
-					// This is an existing ELB backend so we only need to
-					// determine if the state changed
-					setPolicy = (val != proxyProtocol)
+					// This is an existing ELB backend so we need to determine
+					// if the state changed
+					setPolicy = (currentState != proxyProtocol)
 				}
 
 				if setPolicy {
@@ -259,8 +260,9 @@ func (s *AWSCloud) ensureLoadBalancer(namespacedName types.NamespacedName, loadB
 				}
 			}
 
-			// We now need to figure out which backend policies need removed because Amazon
-			// will keep the policies around even if there is no corresponding listener
+			// We now need to figure out if any backend policies need removed
+			// because these old policies will stick around even if there is no
+			// corresponding listener anymore
 			for instancePort, found := range foundBackends {
 				if !found {
 					glog.V(2).Infof("Adjusting AWS loadbalancer proxy protocol on node port %d. Setting to false", instancePort)
